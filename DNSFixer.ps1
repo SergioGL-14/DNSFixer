@@ -13,7 +13,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # Variable para definir el prefijo IP esperado
-$expectedPrefix = "10."
+$expectedPrefixes = @("10.", "69.")
 
 # =====================================================================
 # Función Write-Log: Añade un mensaje al log con timestamp y estilo
@@ -21,28 +21,28 @@ function Write-Log {
     param(
         [string]$Message,
         [System.Windows.Forms.RichTextBox]$txtLog,
-        [string]$LogType = "system"  # valores posibles: system, warning, ok, user
+        [string]$LogType = "system"
     )
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     $formatted = "[$timestamp] $Message`r`n"
-    
+
     $styles = @{
         "warning" = @{ Color = "Red";   Bold = $false }
         "ok"      = @{ Color = "Green"; Bold = $false }
         "user"    = @{ Color = "Purple";Bold = $true }
         "system"  = @{ Color = $txtLog.ForeColor.Name; Bold = $false }
     }
-    
+
     $chosen = $styles[$LogType.ToLower()]
     if (-not $chosen) { $chosen = $styles["system"] }
-    
+
     $txtLog.SelectionStart  = $txtLog.TextLength
     $txtLog.SelectionLength = 0
     $txtLog.SelectionColor  = [System.Drawing.Color]::FromName($chosen.Color)
-    
+
     $fontStyle = if ($chosen.Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
     $txtLog.SelectionFont = New-Object System.Drawing.Font($txtLog.Font, $fontStyle)
-    
+
     $txtLog.AppendText($formatted)
     $txtLog.SelectionColor = $txtLog.ForeColor
 }
@@ -54,16 +54,24 @@ function ProcessRemoteOutput {
         [string[]]$output,
         [System.Windows.Forms.RichTextBox]$txtLog
     )
-    # Definir patrones de error (ajusta según convenga)
-    $errorPatterns = @("error", "failed", "no se pudo", "falló", "exception")
-    $errorLines = $output | Where-Object {
-         $line = $_
-         $isError = $false
-         foreach ($pattern in $errorPatterns) {
-             if ($line -match $pattern) { $isError = $true }
-         }
-         return $isError
+    # Filtrado previo para eliminar basura de PsExec si queda algo
+    $cleanOutput = $output | Where-Object {
+        ($_ -notmatch "PsExec v") -and
+        ($_ -notmatch "Sysinternals - www.sysinternals.com") -and
+        ($_ -notmatch "Connecting to") -and
+        ($_ -notmatch "Starting powershell.exe") -and
+        ($_ -notmatch "Starting PSEXESVC") -and
+        ($_ -notmatch "System.Management.Automation.RemoteException") -and
+        ($_ -notmatch "powershell.exe exited") -and
+        ($_ -ne "") -and ($_ -ne $null)
     }
+
+    # Patrones de error reales
+    $errorPatterns = @("error", "failed", "no se pudo", "falló", "exception")
+    $errorLines = $cleanOutput | Where-Object {
+        ($errorPatterns | Where-Object { $pattern = $_; ($_ -match $pattern) } | Measure-Object).Count -gt 0
+    }
+
     if ($errorLines.Count -gt 0) {
         Write-Log "[ERROR] Salida remota:" $txtLog -LogType "warning"
         foreach ($line in $errorLines) {
@@ -72,38 +80,47 @@ function ProcessRemoteOutput {
     }
 }
 
+
 # =====================================================================
-# Función Invoke-LocalOrRemote: Ejecuta localmente o mediante PsExec (remoto)
+# Función Invoke-LocalOrRemote: Ejecuta local o remotamente mediante PsExec
 function Invoke-LocalOrRemote {
     param (
         [string]$Equipo,
         [ScriptBlock]$Script
     )
-    # Obtener las IP locales del equipo
+
     $localIPs = (Get-NetIPAddress -AddressFamily IPv4 |
                  Where-Object { $_.IPAddress -notlike "169.*" } |
                  Select-Object -ExpandProperty IPAddress)
+
     if ($Equipo -eq $env:COMPUTERNAME -or ($localIPs -contains $Equipo)) {
         return & $Script
     } else {
-        # Convertir el ScriptBlock a cadena
         $commandStr = $Script.ToString()
-        # Ruta de PsExec (se asume que está en PATH; si no, ajustar la ruta)
-        $psexecPath = "C:\temp\PsTools\psexec.exe"
-        # Construir el comando remoto: se invoca PowerShell en el host remoto
+        $psexecPath = "C:\\temp\\PsTools\\psexec.exe"
         $remoteCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"${commandStr}`""
         $fullCommand = "$psexecPath \\$Equipo $remoteCommand"
+
         try {
             $output = cmd /c $fullCommand 2>&1
-            return $output
+            $cleanOutput = $output | Where-Object {
+                ($_ -notmatch "^PsExec v") -and
+                ($_ -notmatch "^Copyright \(C\) 2001") -and
+                ($_ -notmatch "^Connecting with PsExec") -and
+                ($_ -notmatch "^Starting powershell.exe") -and
+                ($_ -notmatch "^Starting PSEXESVC") -and
+                ($_ -notmatch "^System.Management.Automation.RemoteException") -and
+                ($_ -notmatch "^powershell.exe exited") -and
+                ($_ -ne "") -and ($_ -ne $null)
+            }
+            return $cleanOutput
         } catch {
             throw "Error ejecutando comando remoto a través de PsExec: $_"
         }
     }
 }
-
 # =====================================================================
-# Función: Diagnóstico DNS (Básico)
+# Función: Diagnóstico DNS (Básico) [REVISADA CON MÚLTIPLES PREFIJOS]
 function Do-Diagnostic {
     param(
         [string]$Equipo,
@@ -141,19 +158,30 @@ function Do-Diagnostic {
         $nslookupOutput = $resNombre -join "`r`n"
         Write-Log "[INFO] Resultado de nslookup:" $txtLog
         $txtLog.AppendText($nslookupOutput + "`r`n")
+
         $resueltas = $resNombre |
                      Where-Object { $_ -match "Address:" } |
                      ForEach-Object { ($_ -split ":")[1].Trim() } |
-                     Where-Object { $_ -match "^\d+\.\d+\.\d+\.\d+$" }
+                     Where-Object { $_ -match "^\d{1,3}(\.\d{1,3}){3}$" }
+
         Write-Log "[INFO] IPs que devuelve el DNS: $($resueltas -join ', ')" $txtLog
 
         foreach ($ip in $resueltas) {
-            if (-not $ip.StartsWith($expectedPrefix)) {
-                Write-Log "[ALERTA] El registro DNS ($ip) no corresponde a la red esperada ($expectedPrefix)." $txtLog -LogType "warning"
+            $coincide = $false
+            foreach ($prefijo in $expectedPrefixes) {
+                if ($ip.StartsWith($prefijo)) {
+                    $coincide = $true
+                    break
+                }
+            }
+
+            if (-not $coincide) {
+                Write-Log "[ALERTA] El registro DNS ($ip) no corresponde a ninguna red esperada ($($expectedPrefixes -join ', '))." $txtLog -LogType "warning"
             } else {
                 Write-Log "[OK] El registro DNS ($ip) coincide con la red esperada." $txtLog -LogType "ok"
             }
         }
+
         foreach ($ip in $resueltas) {
             if ($ips -contains $ip) {
                 Write-Log "[OK] IP $ip coincide con una IP del equipo." $txtLog -LogType "ok"
@@ -166,10 +194,16 @@ function Do-Diagnostic {
     }
 
     Write-Log "[INFO] Comprobando registros PTR (reverso)" $txtLog
-    foreach ($ip in $ips) {
+
+    $ipsValidas = $ips | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' }
+
+    foreach ($ip in $ipsValidas) {
         try {
             $resIP = nslookup $ip 2>&1
-            $ptrOutput = $resIP -join "`r`n"
+            $ptrOutput = ($resIP -join "`r`n") -replace '[^\x20-\x7E\r\n]', ''
+            if ($ptrOutput.Length -gt 1000) {
+                $ptrOutput = $ptrOutput.Substring(0, 1000) + "...(truncado)"
+            }
             Write-Log "↪️ $ip → $ptrOutput" $txtLog
         } catch {
             Write-Log "[ERROR] Falló el PTR para $ip" $txtLog -LogType "warning"
@@ -191,7 +225,8 @@ function Do-Diagnostic {
 }
 
 # =====================================================================
-# Función: Resolver incidencia (corrección extendida)
+# =====================================================================
+# Función: Resolver incidencia
 function Do-FixStaleDNS {
     param(
         [string]$Equipo,
@@ -199,25 +234,38 @@ function Do-FixStaleDNS {
         [System.Windows.Forms.Button]$btnDiagnostico,
         [System.Windows.Forms.Button]$btnLimpiar
     )
-    Write-Log "[INFO] Detectando incidencia en el registro DNS..." $txtLog
-    Do-Diagnostic -Equipo $Equipo -txtLog $txtLog
-    if ($txtLog.Text -match "no corresponde a la red esperada") {
-         Write-Log "[INFO] Incidencia detectada. Ejecutando corrección y limpieza..." $txtLog -LogType "user"
-         ipconfig /registerdns | Out-Null
-         Write-Log "[OK] Registro DNS forzado con 'ipconfig /registerdns'." $txtLog -LogType "ok"
-         Start-Sleep -Seconds 1
-         try {
-             $clearOutput = Invoke-LocalOrRemote -Equipo $Equipo -Script { Clear-DnsClientCache }
-             ProcessRemoteOutput -output $clearOutput -txtLog $txtLog
-             Write-Log "[OK] Caché DNS limpiada correctamente." $txtLog -LogType "ok"
-         } catch {
-             Write-Log "[ERROR] Falló al limpiar la caché DNS." $txtLog -LogType "warning"
-         }
-         Start-Sleep -Seconds 1
-         Write-Log "[INFO] Re-ejecutando diagnóstico para confirmar la corrección..." $txtLog -LogType "user"
-         Do-Diagnostic -Equipo $Equipo -txtLog $txtLog
-    } else {
-         Write-Log "[INFO] No se detectó incidencia de registro DNS obsoleto. No se requiere acción adicional." $txtLog
+
+    try {
+        # Ejecutar diagnóstico sin mostrar nada aún
+        $diagnosticoTemp = New-Object System.Windows.Forms.RichTextBox
+        Do-Diagnostic -Equipo $Equipo -txtLog $diagnosticoTemp
+
+        # Copiar resultados al log si hay alerta
+        if ($diagnosticoTemp.Text -match "no corresponde a la red esperada") {
+            $txtLog.Text = $diagnosticoTemp.Text
+            Write-Log "[INFO] Se detectó registro DNS obsoleto. Aplicando corrección..." $txtLog -LogType "user"
+            
+            ipconfig /registerdns | Out-Null
+            Write-Log "[OK] Registro DNS forzado con 'ipconfig /registerdns'." $txtLog -LogType "ok"
+            Start-Sleep -Seconds 1
+
+            try {
+                $clearOutput = Invoke-LocalOrRemote -Equipo $Equipo -Script { Clear-DnsClientCache }
+                ProcessRemoteOutput -output $clearOutput -txtLog $txtLog
+                Write-Log "[OK] Caché DNS limpiada correctamente." $txtLog -LogType "ok"
+            } catch {
+                Write-Log "[ERROR] Falló al limpiar la caché DNS." $txtLog -LogType "warning"
+            }
+
+            Start-Sleep -Seconds 1
+            Write-Log "[INFO] Re-ejecutando diagnóstico para confirmar la corrección..." $txtLog -LogType "user"
+            Do-Diagnostic -Equipo $Equipo -txtLog $txtLog
+        } else {
+            $txtLog.Text = $diagnosticoTemp.Text
+            Write-Log "[INFO] No se detectaron incidencias. No se aplicaron cambios." $txtLog
+        }
+    } catch {
+        Write-Log "[ERROR] Fallo inesperado durante la corrección DNS: $_" $txtLog -LogType "warning"
     }
 }
 
@@ -333,7 +381,7 @@ function Do-AdvancedDiagnostic {
 # =====================================================================
 # Creación de la Interfaz Gráfica (GUI)
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "DNSFixer - Diagnóstico y Corrección DNS (Mejorado y Avanzado)"
+$form.Text = "DNSFixer - Diagnóstico y Corrección DNS"
 $form.Size = New-Object System.Drawing.Size(700, 600)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = "Gainsboro"
