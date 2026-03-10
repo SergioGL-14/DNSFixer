@@ -69,7 +69,7 @@ Aplicación gráfica desarrollada en PowerShell con interfaz WPF, diseñada para
 ```powershell
 # Desde PowerShell (como Administrador recomendado)
 cd "C:\ruta\a\DNSFixer"
-.\DNSFixer_WPF.ps1
+.\DNSFixer.ps1
 ```
 
 ### Política de ejecución
@@ -78,7 +78,7 @@ Si PowerShell bloquea la ejecución:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-.\DNSFixer_WPF.ps1
+.\DNSFixer.ps1
 ```
 
 ### Configuración de PsExec (opcional, para uso remoto)
@@ -127,7 +127,7 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 
 ```
 DNSFixer/
-├── DNSFixer_WPF.ps1                              # Aplicación principal (WPF v2.0)
+├── DNSFixer.ps1                              # Aplicación principal (WPF v2.0)
 ├── # DNSFixer - GUI Diagnóstico Inicial DNS.ps1   # Script original (Windows Forms v1.0)
 └── readme.md                                      # Documentación del proyecto
 ```
