@@ -29,7 +29,7 @@ Aplicación gráfica desarrollada en PowerShell con interfaz WPF, diseñada para
     - [Requisitos para uso remoto](#requisitos-para-uso-remoto)
   - [Solución de problemas](#solución-de-problemas)
   - [Changelog](#changelog)
-    - [v2.0 (2026-02-06)](#v20-2026-02-06)
+    - [v2.0 (2026-03-10)](#v20-2026-02-06)
     - [v1.0](#v10)
   - [Licencia y créditos](#licencia-y-créditos)
 
@@ -299,7 +299,7 @@ psexec.exe \\EQUIPO-REMOTO powershell.exe -NoProfile -ExecutionPolicy Bypass -Co
 
 ## Changelog
 
-### v2.0 (2026-02-06)
+### v2.0 (2026-03-10)
 
 - **Migración completa** de Windows Forms a WPF
 - **Nueva interfaz** con layout responsivo Grid, pestañas horizontales y paleta Material Design
