@@ -74,12 +74,9 @@ cd "C:\ruta\a\DNSFixer"
 
 ### Política de ejecución
 
-Si PowerShell bloquea la ejecución:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-.\DNSFixer.ps1
-```
+La aplicación no cambia la política de ejecución. Si una directiva del equipo
+bloquea el script, debe autorizarlo un administrador conforme a la política
+vigente.
 
 ### Configuración de PsExec (opcional, para uso remoto)
 
@@ -105,7 +102,7 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 │  Corrección        │  ipconfig /registerdns          │
 │  Limpieza          │  Clear-DnsClientCache          │
 │  Red               │  Get-NetIPAddress, netsh       │
-│  Remoto            │  PsExec (cmd /c)               │
+│  Remoto            │  PsExec con argumentos separados│
 ├─────────────────────────────────────────────────────┤
 │  Paleta de colores │  Material Design               │
 │  Primary: #1976D2  │  Success: #4CAF50              │
@@ -268,10 +265,10 @@ DNSFixer puede ejecutar diagnósticos y correcciones en equipos remotos utilizan
 ### Funcionamiento
 
 1. Si el nombre/IP del equipo coincide con el equipo local → ejecuta directamente
-2. Si es un equipo remoto → construye un comando PsExec:
+2. Si es un equipo remoto → invoca PsExec con argumentos separados:
 
 ```
-psexec.exe \\EQUIPO-REMOTO powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "..."
+psexec.exe \\EQUIPO-REMOTO powershell.exe -NoProfile -Command "..."
 ```
 
 ### Requisitos para uso remoto

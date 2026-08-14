@@ -7,6 +7,8 @@ using namespace System.Windows.Media
 
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot "DNSFixer.Security.ps1")
+
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  DNSFIXER - Sistema de Diagnostico DNS" -ForegroundColor Yellow
 Write-Host "  Version 2.0 WPF" -ForegroundColor Yellow
@@ -132,34 +134,41 @@ function Invoke-LocalOrRemote {
         [ScriptBlock]$Script
     )
 
-    $localIPs = (Get-NetIPAddress -AddressFamily IPv4 |
-                 Where-Object { $_.IPAddress -notlike "169.*" } |
+    if (-not (Test-ComputerTarget $Equipo)) {
+        throw "El equipo no es un hostname o IP valido: '$Equipo'"
+    }
+
+    $localIPs = (Get-NetIPAddress |
+                 Where-Object { $_.IPAddress -and $_.IPAddress -notlike "169.*" } |
                  Select-Object -ExpandProperty IPAddress)
 
-    if ($Equipo -eq $env:COMPUTERNAME -or ($localIPs -contains $Equipo)) {
+    if ($Equipo -ieq $env:COMPUTERNAME -or ($localIPs -contains $Equipo)) {
         return & $Script
-    } else {
-        $commandStr = $Script.ToString()
-        $psexecPath = $App.Config.PsExecPath
-        $remoteCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"${commandStr}`""
-        $fullCommand = "$psexecPath \\$Equipo $remoteCommand"
+    }
 
-        try {
-            $output = cmd /c $fullCommand 2>&1
-            $cleanOutput = $output | Where-Object {
-                ($_ -notmatch "^PsExec v") -and
-                ($_ -notmatch "^Copyright \(C\) 2001") -and
-                ($_ -notmatch "^Connecting with PsExec") -and
-                ($_ -notmatch "^Starting powershell.exe") -and
-                ($_ -notmatch "^Starting PSEXESVC") -and
-                ($_ -notmatch "^System.Management.Automation.RemoteException") -and
-                ($_ -notmatch "^powershell.exe exited") -and
-                ($_ -ne "") -and ($_ -ne $null)
-            }
-            return $cleanOutput
-        } catch {
-            throw "Error ejecutando comando remoto a traves de PsExec: $_"
-        }
+    $psexecPath = $App.Config.PsExecPath
+    $remoteArguments = @(
+        "\\$Equipo",
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        $Script.ToString()
+    )
+
+    try {
+        $output = & $psexecPath @remoteArguments 2>&1
+        return @($output | Where-Object {
+            ($_ -notmatch "^PsExec v") -and
+            ($_ -notmatch "^Copyright \(C\) 2001") -and
+            ($_ -notmatch "^Connecting with PsExec") -and
+            ($_ -notmatch "^Starting powershell.exe") -and
+            ($_ -notmatch "^Starting PSEXESVC") -and
+            ($_ -notmatch "^System.Management.Automation.RemoteException") -and
+            ($_ -notmatch "^powershell.exe exited") -and
+            ($_ -ne "") -and ($_ -ne $null)
+        })
+    } catch {
+        throw "Error ejecutando comando remoto a traves de PsExec: $_"
     }
 }
 
@@ -172,6 +181,11 @@ function Do-Diagnostic {
         [string]$Equipo,
         [System.Windows.Controls.TextBox]$txtLog
     )
+
+    if (-not (Test-ComputerTarget $Equipo)) {
+        Write-Log "[ERROR] El equipo no es un hostname o IP valido." $txtLog -LogType "error"
+        return
+    }
 
     $txtLog.Clear()
     Write-Log "[INFO] Iniciando diagnostico basico para $Equipo" $txtLog -LogType "info"
