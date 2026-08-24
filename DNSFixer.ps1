@@ -1,5 +1,5 @@
-﻿# DNSFixer - GUI Diagnostico DNS con WPF
-# Version 2.0 - Migracion completa a WPF con diseno moderno
+# DNSFixer - DNS diagnostics GUI built with WPF
+# v2.0 - Windows Forms interface replaced with WPF
 
 using namespace System.Windows
 using namespace System.Windows.Controls
@@ -15,13 +15,13 @@ Write-Host "  Version 2.0 WPF" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Cargar ensamblados WPF
+# Load WPF assemblies
 Add-Type -AssemblyName "PresentationCore"
 Add-Type -AssemblyName "PresentationFramework"
 Add-Type -AssemblyName "WindowsBase"
 
 # ============================================================
-#  INICIALIZACION GLOBAL
+#  GLOBAL APPLICATION STATE
 # ============================================================
 
 if (-not (Get-Variable -Name Global:DNSFixerApp -Scope Global -ErrorAction SilentlyContinue)) {
@@ -50,7 +50,7 @@ if (-not (Get-Variable -Name Global:DNSFixerApp -Scope Global -ErrorAction Silen
 $App = $Global:DNSFixerApp
 
 # ============================================================
-#  FUNCION WRITE-LOG (WPF Adapted)
+#  WRITE-LOG
 # ============================================================
 
 function Write-Log {
@@ -62,7 +62,7 @@ function Write-Log {
 
     if (-not $txtLog) { return }
 
-    # Thread-safe: si no estamos en el hilo UI, re-invocamos
+    # Off the UI thread: marshal the call through the dispatcher
     if ($txtLog.Dispatcher.CheckAccess() -eq $false) {
         $txtLog.Dispatcher.Invoke([action]{
             Write-Log -Message $Message -txtLog $txtLog -LogType $LogType
@@ -86,7 +86,7 @@ function Write-Log {
 }
 
 # ============================================================
-#  FUNCION PROCESSREMOTEOUTPUT
+#  PROCESSREMOTEOUTPUT
 # ============================================================
 
 function ProcessRemoteOutput {
@@ -125,7 +125,7 @@ function ProcessRemoteOutput {
 }
 
 # ============================================================
-#  FUNCION INVOKE-LOCALORREMOTE
+#  INVOKE-LOCALORREMOTE
 # ============================================================
 
 function Invoke-LocalOrRemote {
@@ -173,7 +173,7 @@ function Invoke-LocalOrRemote {
 }
 
 # ============================================================
-#  FUNCION DO-DIAGNOSTIC (Diagnostico Basico)
+#  DO-DIAGNOSTIC
 # ============================================================
 
 function Do-Diagnostic {
@@ -214,7 +214,7 @@ function Do-Diagnostic {
     Write-Log "[INFO] Ejecutando nslookup al nombre: $Equipo" $txtLog -LogType "info"
     try {
         $resNombre = nslookup $Equipo 2>&1
-        # Filtrar lineas de ruido de PowerShell
+        # Filter out PowerShell noise lines
         $nslookupClean = $resNombre | Where-Object {
             $_.ToString() -notmatch 'System\.Management\.Automation\.RemoteException'
         }
@@ -222,7 +222,7 @@ function Do-Diagnostic {
         Write-Log "[INFO] Resultado de nslookup:" $txtLog -LogType "info"
         Write-Log $nslookupOutput $txtLog
 
-        # Saltar la primera linea "Address:" (es el servidor DNS, no el resultado)
+        # Skip the first "Address:" line: it is the DNS server, not the answer
         $addressLines = @($resNombre | Where-Object { $_ -match "Address:" })
         $resueltas = @()
         if ($addressLines.Count -gt 1) {
@@ -296,7 +296,7 @@ function Do-Diagnostic {
 }
 
 # ============================================================
-#  FUNCION DO-FIXSTALEDNS (Correccion DNS)
+#  DO-FIXSTALEDNS
 # ============================================================
 
 function Do-FixStaleDNS {
@@ -344,7 +344,7 @@ function Do-FixStaleDNS {
 }
 
 # ============================================================
-#  FUNCION DO-CLEANUP (Limpieza de Cache)
+#  DO-CLEANUP
 # ============================================================
 
 function Do-Cleanup {
@@ -362,7 +362,7 @@ function Do-Cleanup {
 }
 
 # ============================================================
-#  FUNCION DO-EXPORT (Exportar Log)
+#  DO-EXPORT
 # ============================================================
 
 function Do-Export {
@@ -393,7 +393,7 @@ function Do-Export {
 }
 
 # ============================================================
-#  FUNCION DO-ANALYSIS (Analisis Inteligente)
+#  DO-ANALYSIS
 # ============================================================
 
 function Do-Analysis {
@@ -408,7 +408,7 @@ function Do-Analysis {
     $contenido = $txtLog.Text
     $resumen = "`r`n========================================`r`n  ANALISIS INTELIGENTE DEL LOG`r`n========================================`r`n"
 
-    # Contar por tipo de mensaje real en el log
+    # Count log lines by message tag
     $errores   = ([regex]::Matches($contenido, "\[ERROR\]|\[X\]")).Count
     $alertas   = ([regex]::Matches($contenido, "\[ALERTA\]|\[WARNING\]")).Count
     $oks       = ([regex]::Matches($contenido, "\[OK\]")).Count
@@ -417,11 +417,11 @@ function Do-Analysis {
     $ptrOk     = ([regex]::Matches($contenido, "PTR .+ -> (?!No encontrado|Sin registro)")).Count
     $ptrFail   = ([regex]::Matches($contenido, "PTR .+ -> (No encontrado|Sin registro)")).Count
 
-    # Resumen de conteo
+    # Summary counts
     $resumen += "  Resultados OK: $oks | Alertas: $alertas | Errores: $errores`r`n"
     $resumen += "  PTR correctos: $ptrOk | PTR fallidos: $ptrFail`r`n`r`n"
 
-    # Diagnostico contextual
+    # Contextual diagnosis
     if ($errores -eq 0 -and $alertas -eq 0 -and $oks -gt 0 -and -not $noResuelve) {
         $resumen += "  [RESULTADO] Diagnostico LIMPIO`r`n"
         $resumen += "  Todo parece estar correctamente configurado.`r`n"
@@ -454,7 +454,7 @@ function Do-Analysis {
 }
 
 # ============================================================
-#  FUNCION DO-ADVANCEDDIAGNOSTIC (Diagnostico Avanzado)
+#  DO-ADVANCEDDIAGNOSTIC
 # ============================================================
 
 function Do-AdvancedDiagnostic {
@@ -493,7 +493,7 @@ function Do-AdvancedDiagnostic {
 }
 
 # ============================================================
-#  CREACION DE PANELES POR PESTANA
+#  TAB ACTION PANELS
 # ============================================================
 
 function Create-ActionButton {
@@ -517,7 +517,7 @@ function Create-ActionButton {
     $btn.HorizontalContentAlignment = "Left"
     $btn.Padding = "15,0,0,0"
 
-    # Efectos hover
+    # Hover feedback
     $btn.Add_MouseEnter({ $this.Opacity = 0.8 })
     $btn.Add_MouseLeave({ $this.Opacity = 1.0 })
 
@@ -649,7 +649,7 @@ function Create-AvanzadoPanel {
     $desc.Margin = "0,0,0,15"
     [void]$panel.Children.Add($desc)
 
-    # Prefijos IP esperados
+    # Expected IP prefixes
     $lblPrefijos = New-Object System.Windows.Controls.TextBlock
     $lblPrefijos.Text = "Prefijos IP esperados:"
     $lblPrefijos.FontSize = 11
@@ -676,7 +676,7 @@ function Create-AvanzadoPanel {
 }
 
 # ============================================================
-#  FUNCION SWITCH-TAB
+#  SWITCH-TAB
 # ============================================================
 
 function Switch-Tab {
@@ -684,7 +684,7 @@ function Switch-Tab {
 
     $App.CurrentTab = $TabName
 
-    # Actualizar colores de pestanas
+    # Refresh tab colors
     foreach ($key in @($App.Controls.TabButtons.Keys)) {
         if ($key -eq $TabName) {
             $App.Controls.TabButtons[$key].Background = $App.Colors.Primary
@@ -693,7 +693,7 @@ function Switch-Tab {
         }
     }
 
-    # Mostrar/ocultar paneles
+    # Toggle panel visibility
     foreach ($key in @($App.Controls.ActionPanels.Keys)) {
         if ($key -eq $TabName) {
             $App.Controls.ActionPanels[$key].Visibility = [System.Windows.Visibility]::Visible
@@ -704,13 +704,13 @@ function Switch-Tab {
 }
 
 # ============================================================
-#  CREACION DE LA INTERFAZ GRAFICA (WPF)
+#  MAIN WINDOW
 # ============================================================
 
 function Create-MainWindow {
     Write-Host "Creando ventana principal DNSFixer (WPF)..." -ForegroundColor Cyan
 
-    # Crear ventana principal
+    # Window
     $window = New-Object System.Windows.Window
     $window.Title = "DNSFixer - Diagnostico y Correccion DNS v2.0"
     $window.Height = 850
@@ -722,11 +722,11 @@ function Create-MainWindow {
     $window.WindowStyle = "SingleBorderWindow"
     $window.ResizeMode = "CanResize"
 
-    # Grid principal con 3 filas
+    # Root grid with three rows
     $mainGrid = New-Object System.Windows.Controls.Grid
     $mainGrid.Background = $App.Colors.Background
 
-    # Definir filas: Titulo (45px) + Pestanas (50px) + Contenido (*)
+    # Header (45px) + tabs (50px) + content (*)
     $row0 = New-Object System.Windows.Controls.RowDefinition
     $row0.Height = 45
     $row1 = New-Object System.Windows.Controls.RowDefinition
@@ -738,7 +738,7 @@ function Create-MainWindow {
     [void]$mainGrid.RowDefinitions.Add($row2)
 
     # ============================================================
-    #  ROW 0: TITULO Y ENTRADA DE EQUIPO
+    #  ROW 0: HEADER AND COMPUTER INPUT
     # ============================================================
 
     $headerGrid = New-Object System.Windows.Controls.Grid
@@ -752,7 +752,7 @@ function Create-MainWindow {
     [void]$headerGrid.ColumnDefinitions.Add($colTitulo)
     [void]$headerGrid.ColumnDefinitions.Add($colInput)
 
-    # Titulo
+    # Application title
     $lblTitulo = New-Object System.Windows.Controls.TextBlock
     $lblTitulo.Text = "$([char]::ConvertFromUtf32(0x1F50D)) DNSFIXER"
     $lblTitulo.FontSize = 24
@@ -762,7 +762,7 @@ function Create-MainWindow {
     [System.Windows.Controls.Grid]::SetColumn($lblTitulo, 0)
     [void]$headerGrid.Children.Add($lblTitulo)
 
-    # Panel de entrada de equipo
+    # Computer name input
     $inputPanel = New-Object System.Windows.Controls.StackPanel
     $inputPanel.Orientation = "Horizontal"
     $inputPanel.VerticalAlignment = "Center"
@@ -790,7 +790,7 @@ function Create-MainWindow {
     [void]$mainGrid.Children.Add($headerGrid)
 
     # ============================================================
-    #  ROW 1: PESTANAS HORIZONTALES
+    #  ROW 1: TAB BAR
     # ============================================================
 
     $tabPanel = New-Object System.Windows.Controls.StackPanel
@@ -799,7 +799,7 @@ function Create-MainWindow {
     $tabPanel.Margin = "20,0,20,0"
     [System.Windows.Controls.Grid]::SetRow($tabPanel, 1)
 
-    # Crear pestanas
+    # Build tab buttons
     $tabData = @(
         @{ Content = "Diagnostico";   Icon = [char]::ConvertFromUtf32(0x1F50D); Tag = "Diagnostico" }
         @{ Content = "Correccion";    Icon = [char]::ConvertFromUtf32(0x1F527); Tag = "Correccion" }
@@ -847,14 +847,14 @@ function Create-MainWindow {
     [void]$mainGrid.Children.Add($tabPanel)
 
     # ============================================================
-    #  ROW 2: CONTENIDO (Grid con 2 columnas)
+    #  ROW 2: CONTENT AREA
     # ============================================================
 
     $contentGrid = New-Object System.Windows.Controls.Grid
     $contentGrid.Margin = "20,10,20,20"
     [System.Windows.Controls.Grid]::SetRow($contentGrid, 2)
 
-    # Columnas: Panel de acciones (350px) + Log (*)
+    # Actions panel (350px) + log (*)
     $colPanel = New-Object System.Windows.Controls.ColumnDefinition
     $colPanel.Width = 350
     $colLog = New-Object System.Windows.Controls.ColumnDefinition
@@ -862,7 +862,7 @@ function Create-MainWindow {
     [void]$contentGrid.ColumnDefinitions.Add($colPanel)
     [void]$contentGrid.ColumnDefinitions.Add($colLog)
 
-    # Panel izquierdo con acciones
+    # Left column: actions
     $actionsBorder = New-Object System.Windows.Controls.Border
     $actionsBorder.Background = "White"
     $actionsBorder.BorderBrush = "#DDDDDD"
@@ -876,7 +876,7 @@ function Create-MainWindow {
     $actionsStack.Orientation = "Vertical"
     $actionsBorder.Child = $actionsStack
 
-    # Titulo del panel
+    # Actions heading
     $titlePanel = New-Object System.Windows.Controls.TextBlock
     $titlePanel.Text = "ACCIONES"
     $titlePanel.FontSize = 16
@@ -885,27 +885,27 @@ function Create-MainWindow {
     $titlePanel.Margin = "0,0,0,20"
     [void]$actionsStack.Children.Add($titlePanel)
 
-    # Contenedor de paneles dinamicos
+    # One action panel per tab
     $App.Controls.ActionPanels = @{}
 
-    # Panel Diagnostico
+    # Diagnostics panel
     $panelDiagnostico = Create-DiagnosticoPanel
     [void]$actionsStack.Children.Add($panelDiagnostico)
     $App.Controls.ActionPanels["Diagnostico"] = $panelDiagnostico
 
-    # Panel Correccion
+    # Repair panel
     $panelCorreccion = Create-CorreccionPanel
     $panelCorreccion.Visibility = [System.Windows.Visibility]::Collapsed
     [void]$actionsStack.Children.Add($panelCorreccion)
     $App.Controls.ActionPanels["Correccion"] = $panelCorreccion
 
-    # Panel Analisis
+    # Analysis panel
     $panelAnalisis = Create-AnalisisPanel
     $panelAnalisis.Visibility = [System.Windows.Visibility]::Collapsed
     [void]$actionsStack.Children.Add($panelAnalisis)
     $App.Controls.ActionPanels["Analisis"] = $panelAnalisis
 
-    # Panel Avanzado
+    # Settings panel
     $panelAvanzado = Create-AvanzadoPanel
     $panelAvanzado.Visibility = [System.Windows.Visibility]::Collapsed
     [void]$actionsStack.Children.Add($panelAvanzado)
@@ -913,7 +913,7 @@ function Create-MainWindow {
 
     [void]$contentGrid.Children.Add($actionsBorder)
 
-    # Panel derecho con log
+    # Right column: activity log
     $logBorder = New-Object System.Windows.Controls.Border
     $logBorder.Background = "White"
     $logBorder.BorderBrush = "#DDDDDD"
@@ -930,7 +930,7 @@ function Create-MainWindow {
     [void]$logGrid.RowDefinitions.Add($logRow0)
     [void]$logGrid.RowDefinitions.Add($logRow1)
 
-    # Titulo del log
+    # Log heading
     $logTitle = New-Object System.Windows.Controls.TextBlock
     $logTitle.Text = "$([char]::ConvertFromUtf32(0x1F4CB)) REGISTRO DE ACTIVIDAD"
     $logTitle.FontSize = 14
@@ -940,7 +940,7 @@ function Create-MainWindow {
     [System.Windows.Controls.Grid]::SetRow($logTitle, 0)
     [void]$logGrid.Children.Add($logTitle)
 
-    # ScrollViewer con TextBox para el log
+    # Read-only log box inside a ScrollViewer
     $scrollViewer = New-Object System.Windows.Controls.ScrollViewer
     $scrollViewer.VerticalScrollBarVisibility = "Auto"
     $scrollViewer.HorizontalScrollBarVisibility = "Auto"
@@ -973,7 +973,7 @@ function Create-MainWindow {
 }
 
 # ============================================================
-#  INICIALIZAR Y MOSTRAR VENTANA
+#  BUILD AND SHOW THE WINDOW
 # ============================================================
 
 $window = Create-MainWindow
