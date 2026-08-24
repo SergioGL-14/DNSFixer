@@ -1,323 +1,137 @@
-# DNSFixer v2.0
+# DNSFixer
 
-**Herramienta de diagnóstico y corrección DNS para entornos Windows**
+Windows GUI tool to diagnose and repair DNS problems on local or remote
+machines. Written in PowerShell with a WPF interface, aimed at IT support
+work: stale DNS records, resolutions that point to the wrong network, cache
+issues.
 
-Aplicación gráfica desarrollada en PowerShell con interfaz WPF, diseñada para técnicos de soporte IT. Permite diagnosticar, analizar y corregir problemas de resolución DNS en equipos locales y remotos de forma rápida y visual.
+## Features
 
----
-
-## Índice
-
-- [DNSFixer v2.0](#dnsfixer-v20)
-  - [Índice](#índice)
-  - [Características principales](#características-principales)
-  - [Requisitos del sistema](#requisitos-del-sistema)
-  - [Instalación y ejecución](#instalación-y-ejecución)
-    - [Ejecución rápida](#ejecución-rápida)
-    - [Política de ejecución](#política-de-ejecución)
-    - [Configuración de PsExec (opcional, para uso remoto)](#configuración-de-psexec-opcional-para-uso-remoto)
-  - [Arquitectura técnica](#arquitectura-técnica)
-    - [Patrón de diseño](#patrón-de-diseño)
-  - [Estructura del proyecto](#estructura-del-proyecto)
-  - [Guía de uso por pestañas](#guía-de-uso-por-pestañas)
-    - [1. Diagnóstico](#1-diagnóstico)
-    - [2. Corrección](#2-corrección)
-    - [3. Análisis](#3-análisis)
-    - [4. Configuración](#4-configuración)
-  - [Ejecución remota con PsExec](#ejecución-remota-con-psexec)
-    - [Funcionamiento](#funcionamiento)
-    - [Requisitos para uso remoto](#requisitos-para-uso-remoto)
-  - [Solución de problemas](#solución-de-problemas)
-  - [Changelog](#changelog)
-    - [v2.0 (2026-03-10)](#v20-2026-02-06)
-    - [v1.0](#v10)
-  - [Licencia y créditos](#licencia-y-créditos)
-
----
-
-## Características principales
-
-| Característica | Descripción |
+| Feature | What it does |
 |---|---|
-| **Diagnóstico básico** | Obtiene IPs activas, servidor DNS, nslookup, registros PTR y TTL |
-| **Diagnóstico avanzado** | Incluye `ipconfig /all`, configuración IPv4 y adaptadores de red |
-| **Corrección automática** | Detecta registros obsoletos y ejecuta `ipconfig /registerdns` + limpieza de caché |
-| **Limpieza de caché** | Ejecuta `Clear-DnsClientCache` en local o remoto |
-| **Análisis inteligente** | Analiza el log del diagnóstico y genera un resumen con conteo de errores, alertas y recomendaciones contextuales |
-| **Exportación** | Guarda el log completo a archivo `.txt` con diálogo de guardado |
-| **Ejecución remota** | Soporta diagnóstico y corrección en equipos remotos vía PsExec |
-| **Interfaz moderna** | WPF con layout responsivo, pestañas horizontales y paleta Material Design |
+| Basic diagnostic | Active IPs, configured DNS server, `nslookup`, PTR records, TTL |
+| Advanced diagnostic | Everything above plus `ipconfig /all`, IPv4 configuration and active adapters |
+| Repair | Detects stale records and runs `ipconfig /registerdns` plus a cache flush, then re-checks |
+| Cache flush | `Clear-DnsClientCache` locally or remotely |
+| Log analysis | Scans the diagnostic log and reports errors, alerts and recommendations |
+| Export | Saves the full log to a `.txt` file |
+| Remote execution | Runs diagnostics and repairs on remote machines through PsExec |
 
----
+The interface has four tabs (Diagnostics, Repair, Analysis, Settings) with an
+activity log on the right side.
 
-## Requisitos del sistema
+## Requirements
 
-| Requisito | Detalle |
+| Requirement | Detail |
 |---|---|
-| **Sistema operativo** | Windows 10 / 11 / Server 2016+ |
-| **PowerShell** | 5.1 o superior |
-| **Framework** | .NET Framework 4.5+ (incluido en Windows 10+) |
-| **Permisos** | Administrador (recomendado para corrección y limpieza) |
-| **PsExec** | Requerido solo para ejecución remota (`C:\temp\PsTools\psexec.exe`) |
+| OS | Windows 10 / 11 / Server 2016+ |
+| PowerShell | 5.1 or later |
+| .NET Framework | 4.5+ (included in Windows 10+) |
+| Privileges | Administrator recommended for repair and cache flush |
+| PsExec | Only needed for remote execution |
 
----
-
-## Instalación y ejecución
-
-### Ejecución rápida
+## Usage
 
 ```powershell
-# Desde PowerShell (como Administrador recomendado)
-cd "C:\ruta\a\DNSFixer"
+cd C:\path\to\DNSFixer
 .\DNSFixer.ps1
 ```
 
-### Política de ejecución
+The script never changes the execution policy. If a policy blocks it, an
+administrator has to authorize it according to your own rules.
 
-La aplicación no cambia la política de ejecución. Si una directiva del equipo
-bloquea el script, debe autorizarlo un administrador conforme a la política
-vigente.
+### Expected IP prefixes
 
-### Configuración de PsExec (opcional, para uso remoto)
+This is the central setting. When the diagnostic resolves a computer name,
+it compares the returned IP against the prefix list configured in the
+Settings tab (`10.` and `69.` by default):
 
-1. Descarga [PsExec de Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
-2. Coloca `psexec.exe` en `C:\temp\PsTools\`
-3. La ruta se puede modificar en el código fuente (`$App.Config.PsExecPath`)
+- The IP starts with one of the prefixes: the DNS record is considered valid.
+- It does not match any prefix: alert, likely a stale record.
 
----
+Adjust the list when your network uses different ranges, when you manage
+several sites, or after network migrations. Changes apply to the current
+session only.
 
-## Arquitectura técnica
+### Remote execution
+
+Enter a remote computer name or IP and DNSFixer runs the same commands there
+through PsExec instead of locally:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    DNSFixer v2.0                    │
-├─────────────────────────────────────────────────────┤
-│  UI Layer          │  WPF (PresentationFramework)   │
-│  Layout            │  Grid responsivo (3 filas)     │
-│  Navegación        │  Pestañas horizontales (4)     │
-│  Estado global     │  $Global:DNSFixerApp           │
-│  Thread-safety     │  Dispatcher.CheckAccess()      │
-├─────────────────────────────────────────────────────┤
-│  Lógica DNS        │  nslookup, Resolve-DnsName     │
-│  Corrección        │  ipconfig /registerdns          │
-│  Limpieza          │  Clear-DnsClientCache          │
-│  Red               │  Get-NetIPAddress, netsh       │
-│  Remoto            │  PsExec con argumentos separados│
-├─────────────────────────────────────────────────────┤
-│  Paleta de colores │  Material Design               │
-│  Primary: #1976D2  │  Success: #4CAF50              │
-│  Warning: #FF9800  │  Error: #F44336                │
-│  Info: #2196F3     │  Background: #FAFAFA           │
-└─────────────────────────────────────────────────────┘
+psexec.exe \\REMOTE-PC powershell.exe -NoProfile -Command "..."
 ```
 
-### Patrón de diseño
+Requirements for remote mode:
 
-- **Estado centralizado:** Objeto `$Global:DNSFixerApp` almacena controles, configuración, colores y pestaña activa.
-- **Funciones puras de diagnóstico:** Cada función (`Do-Diagnostic`, `Do-FixStaleDNS`, etc.) recibe el equipo y el control de log como parámetros.
-- **Invoke-LocalOrRemote:** Abstracción que ejecuta el mismo ScriptBlock en local o remoto según el equipo indicado.
-- **Write-Log thread-safe:** Usa `Dispatcher.CheckAccess()` para garantizar escritura segura al TextBox desde cualquier hilo.
+1. `psexec.exe` available at `C:\temp\PsTools\` (path is configurable in
+   `$App.Config.PsExecPath`)
+2. The remote machine reachable over the network
+3. Administrator permissions and the `ADMIN$` share enabled on it
 
----
+Local execution is detected automatically when the target matches the local
+computer name or one of its IPs.
 
-## Estructura del proyecto
+## Troubleshooting
+
+| Problem | Cause | Solution |
+|---|---|---|
+| "Non-existent domain" when resolving | No DNS record for that computer | Normal in home networks. In corporate networks run Repair |
+| Prefixes always report alerts | Current network not in the prefix list | Add your prefix in Settings |
+| Repair applies no changes | Insufficient permissions | Run PowerShell as Administrator |
+| PsExec fails | Not found or blocked | Check path and network permissions |
+| Cache flushed but problem persists | Stale record on the DNS server | Contact the DNS administrator |
+
+## How it works
+
+All state lives in a single `$Global:DNSFixerApp` object (controls,
+configuration, active tab). Every action function receives the target
+computer and the log control as parameters, and `Invoke-LocalOrRemote`
+decides whether a script block runs locally or through PsExec. Log writes go
+through `Write-Log`, which marshals calls to the UI thread via the WPF
+dispatcher.
+
+Input validation lives in `DNSFixer.Security.ps1`: host names and IPs are
+checked before they reach `nslookup` or PsExec, so shell metacharacters
+cannot be injected through the computer field.
+
+## Project structure
 
 ```
 DNSFixer/
-├── DNSFixer.ps1                              # Aplicación principal (WPF v2.0)
-├── # DNSFixer - GUI Diagnóstico Inicial DNS.ps1   # Script original (Windows Forms v1.0)
-└── readme.md                                      # Documentación del proyecto
+├── DNSFixer.ps1              # Main application (WPF)
+├── DNSFixer.Security.ps1     # Input validation helpers
+├── tests/
+│   └── Test-DNSFixerSecurity.ps1
+├── LICENSE
+└── README.md
 ```
 
-**Dependencia externa (opcional):**
+The test suite validates the security helpers and scans the main script for
+unsafe patterns. It runs in CI on every push and can be executed directly:
 
+```powershell
+./tests/Test-DNSFixerSecurity.ps1
 ```
-C:\temp\PsTools\psexec.exe    # Para ejecución remota
-```
-
----
-
-## Guía de uso por pestañas
-
-### 1. Diagnóstico
-
-Pestaña principal para analizar la configuración DNS de un equipo.
-
-**Ejecutar Diagnóstico** — Realiza las siguientes comprobaciones:
-
-| Paso | Qué hace | Cmdlet / Herramienta |
-|---|---|---|
-| 1 | Obtener IPs activas del equipo (IPv4) | `Get-NetIPAddress` |
-| 2 | Obtener servidor DNS configurado | `Get-DnsClientServerAddress` |
-| 3 | Resolver nombre del equipo vía DNS | `nslookup` |
-| 4 | Validar si las IPs resueltas coinciden con los prefijos esperados | Comparación con `$App.Config.ExpectedPrefixes` |
-| 5 | Verificar que la IP resuelta coincide con alguna IP activa | Comparación directa |
-| 6 | Comprobar registros PTR (resolución inversa) | `Resolve-DnsName -Type PTR` |
-| 7 | Obtener TTL de los registros DNS | `Resolve-DnsName` |
-
-**Diagnóstico Avanzado** — Ejecuta todo lo anterior más:
-
-| Paso adicional | Cmdlet / Herramienta |
-|---|---|
-| Configuración IP completa | `ipconfig /all` |
-| Configuración IPv4 de interfaces | `netsh interface ipv4 show config` |
-| Listado de adaptadores activos | `Get-NetAdapter` (solo Status = Up) |
-
----
-
-### 2. Corrección
-
-Herramientas para reparar problemas DNS detectados.
-
-**Corregir DNS:**
-
-1. Ejecuta un diagnóstico silencioso en segundo plano
-2. Si detecta que el registro DNS no corresponde a la red esperada:
-   - Fuerza re-registro con `ipconfig /registerdns`
-   - Limpia la caché DNS con `Clear-DnsClientCache`
-   - Re-ejecuta el diagnóstico para confirmar la corrección
-3. Si no detecta incidencias, informa que no se aplicaron cambios
-
-**Limpiar Caché DNS:**
-
-- Ejecuta `Clear-DnsClientCache` en el equipo indicado (local o remoto)
-- Útil cuando los resultados de nslookup están cacheados con información antigua
-
----
-
-### 3. Análisis
-
-Herramientas de interpretación y exportación.
-
-**Análisis Inteligente:**
-
-Escanea el contenido del log buscando patrones y genera un informe estructurado:
-
-```
-========================================
-  ANALISIS INTELIGENTE DEL LOG
-========================================
-  Resultados OK: 2 | Alertas: 0 | Errores: 0
-  PTR correctos: 2 | PTR fallidos: 0
-
-  [RESULTADO] El DNS no resuelve el nombre del equipo
-  Esto puede ser normal en redes domesticas sin DNS interno.
-  En red corporativa, esto indica que el registro DNS falta.
-
-  Recomendaciones:
-    - Ejecuta 'Corregir DNS' para forzar ipconfig /registerdns
-    - Verifica que el equipo tiene sufijo DNS correcto
-
-  [NOTA] Los registros PTR (inverso) SI resuelven correctamente.
-  Esto sugiere que el problema es solo el registro A (directo).
-========================================
-```
-
-**Exportar Log:**
-
-- Abre un diálogo de guardado para exportar el log completo a `.txt`
-- Nombre por defecto: `DNSFixer_<equipo>_<fecha>.txt`
-
----
-
-### 4. Configuración
-
-Permite ajustar los parámetros de validación de la herramienta.
-
-**Prefijos IP esperados:**
-
-Este es el parámetro central de DNSFixer. Define qué rangos de red se consideran "correctos" al validar un registro DNS.
-
-| Campo | Valor por defecto | Ejemplo personalizado |
-|---|---|---|
-| Prefijos IP | `10., 69.` | `172.16., 10., 192.168.1.` |
-
-**¿Cómo funciona la validación?**
-
-Cuando el diagnóstico resuelve la IP de un equipo vía DNS, compara esa IP contra cada prefijo configurado:
-
-- Si la IP **comienza** con alguno de los prefijos → **OK** ✅ (el registro DNS es correcto)
-- Si **no coincide** con ninguno → **ALERTA** ⚠️ (posible registro DNS obsoleto)
-
-**Ejemplo práctico:**
-
-```
-Prefijos configurados: 10., 69.
-
-DNS resuelve EQUIPO-001 → 10.0.5.23    → ✅ OK (empieza por "10.")
-DNS resuelve EQUIPO-001 → 192.168.1.50 → ⚠️ ALERTA (no coincide con ningún prefijo)
-```
-
-**¿Cuándo modificar los prefijos?**
-
-- Cuando tu red corporativa usa rangos distintos a los configurados por defecto
-- Si operas en múltiples sedes con diferentes subredes
-- Para adaptarte a migraciones de red o cambios de infraestructura
-
-> **Nota:** Los cambios de configuración solo persisten durante la sesión actual. Al reiniciar la aplicación, se restablecen los valores por defecto.
-
----
-
-## Ejecución remota con PsExec
-
-DNSFixer puede ejecutar diagnósticos y correcciones en equipos remotos utilizando [PsExec de Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec).
-
-### Funcionamiento
-
-1. Si el nombre/IP del equipo coincide con el equipo local → ejecuta directamente
-2. Si es un equipo remoto → invoca PsExec con argumentos separados:
-
-```
-psexec.exe \\EQUIPO-REMOTO powershell.exe -NoProfile -Command "..."
-```
-
-### Requisitos para uso remoto
-
-- `psexec.exe` en `C:\temp\PsTools\`
-- El equipo remoto debe ser accesible por red
-- Permisos de administrador en el equipo remoto
-- El recurso compartido `ADMIN$` debe estar habilitado
-
----
-
-## Solución de problemas
-
-| Problema | Causa | Solución |
-|---|---|---|
-| "Non-existent domain" al resolver | El DNS no tiene registro para ese equipo | Normal en redes domésticas. En corporativa: ejecutar "Corregir DNS" |
-| IPs activas no se obtienen | Equipo apagado o inaccesible | Verificar conectividad con `ping` |
-| Corrección DNS no aplica cambios | Permisos insuficientes | Ejecutar PowerShell como Administrador |
-| PsExec falla | No encontrado o bloqueado | Verificar ruta y permisos de red |
-| TTL no se puede obtener | `Resolve-DnsName` no resuelve el nombre | El nombre no está registrado en DNS |
-| Prefijos siempre dan ALERTA | Red actual no está en los prefijos | Ir a Configuración y añadir tu prefijo de red |
-| Caché limpia pero persiste el problema | Registro obsoleto en el servidor DNS | Contactar al administrador de DNS |
-
----
 
 ## Changelog
 
 ### v2.0 (2026-03-10)
 
-- **Migración completa** de Windows Forms a WPF
-- **Nueva interfaz** con layout responsivo Grid, pestañas horizontales y paleta Material Design
-- **Análisis inteligente** reescrito con detección contextual y recomendaciones
-- **PTR mejorado** usando `Resolve-DnsName` en lugar de `nslookup`
-- **TTL funcional** usando `Resolve-DnsName` con detalle de tipo y valor
-- **Obtención de IPs** corregida (array plano IPv4)
-- **Output limpio** en nslookup (filtrado de `RemoteException`)
-- **Adaptadores** filtrados solo los activos con formato compacto
-- **Estado global** con `$Global:DNSFixerApp`
+- Windows Forms replaced with WPF: resizable layout, tab bar, Material-based palette
+- Log analysis rewritten with contextual detection and recommendations
+- PTR lookups and TTL reporting moved to `Resolve-DnsName`
+- Fixed active IP retrieval (flat IPv4 array) and nslookup output filtering
+- Adapter listing filtered to connected interfaces
+- Centralized application state in `$Global:DNSFixerApp`
+- Input validation and safe PsExec invocation hardened
 
 ### v1.0
 
-- Versión inicial con Windows Forms
-- Diagnóstico básico, corrección, limpieza, exportación y análisis
+- Initial version (Windows Forms): basic diagnostic, repair, cache flush, export
 
----
+## License
 
-## Licencia y créditos
-
-- **Autor:** Desarrollo interno
-- **PsExec:** [Sysinternals / Microsoft](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
-- **Iconografía:** Unicode Emoji + caracteres BMP
-- **Paleta de colores:** Basada en [Material Design](https://material.io/design/color)
+MIT — see [LICENSE](LICENSE). PsExec is part of
+[Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
+by Microsoft.
